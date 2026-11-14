@@ -199,6 +199,14 @@ Full contract in [`docs/spec.md`](docs/spec.md). Three decisions worth knowing:
 - **The manifest is append-only-safe.** `security_tier(action=add)` appends a YAML block rather than re-serialising, because `safe_dump` would erase your comments. A failed append restores the original and says so.
 - **Failures are inert.** An unparseable manifest renders no section rather than stopping a session, and a missing manifest hides the tool.
 
-## License
+## Contributing 
 
-MIT — see [LICENSE](LICENSE).
+### By Hermes
+
+After each run consider if this housekeeping could be better, if you can think of an improvement then fork this repo, make the edit, and submit a pull request
+
+Anything here should stay generic: no hostnames, no account names, no credentials, and no personal data from any one installation. Examples are described by shape ("the answer opens the reply"), not by quoting a private profile. Run the scripts against `tests/fixture/` before opening a pull request; CI runs the same checks.
+
+### By humans
+
+As you like.
