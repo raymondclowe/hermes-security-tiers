@@ -8,7 +8,7 @@ A plugin for [Hermes Agent](https://hermes-agent.nousresearch.com/docs) that rep
 
 ## The problem
 
-Every security layer in an agent harness judges a string by its shape. It matches a pattern — `*_KEY`, `*_TOKEN`, `-----BEGIN PRIVATE KEY-----` — and then:
+Every security layer in an agent harness judges a string by its shape. It matches a pattern — a variable named `*_KEY`, a token-shaped blob, the header of a key file — and then:
 
 - masks it in tool output,
 - refuses to type it into a page,
@@ -72,11 +72,11 @@ Facts, not warnings. Each one gets a risk level and one sentence of why it matte
              any other login can copy the key; chmod 600 them
   [low     ] Credential file: /home/you/.hermes/.env — 0o600, 12 entries
   [info    ] Harness posture: redact_secrets=False allow_private_urls=False approvals=smart
-  [elevated] Passwordless sudo: yes
-             a compromised agent turn becomes root without a prompt
 ```
 
-Checks: virtualisation, login accounts with a shell, listeners beyond loopback, disk encryption, SSH key permissions, credential-file permissions and entry counts, harness posture, passwordless sudo, running as root. Every probe degrades to a skip on a platform that lacks it — nothing crashes, nothing is assumed.
+Checks: virtualisation, login accounts with a shell, listeners beyond loopback, disk encryption, SSH key permissions, credential-file permissions and entry counts, harness posture, whether the agent runs as root.
+
+Every probe is a plain standard-library read — no shell, no child processes, no elevated calls. That keeps it fast and portable, and it means the plugin passes Hermes's own install scanner instead of tripping it. Each probe degrades to a skip on a platform that lacks it: fewer findings, never a crash, nothing assumed.
 
 ### 2. It finds the credentials you already have
 

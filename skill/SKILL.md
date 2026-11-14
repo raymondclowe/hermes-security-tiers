@@ -21,13 +21,14 @@ python3 "$HERMES_HOME/plugins/security-tiers/scripts/setup.py" --check
 ```
 
 Read the output. It gives you, in this order: platform, logins, inbound ports, disk
-encryption, SSH key permissions, credential-file permissions, harness posture, sudo.
+encryption, SSH key permissions, credential-file permissions, harness posture, whether
+the agent runs as root.
 
 `--check --json` when you want to reason over it rather than show it.
 
 Show the operator the two or three findings that actually change their answer, with
-the risk level. Skip `info` rows. Do not editorialise: `[elevated] Passwordless sudo:
-yes` already carries its own weight.
+the risk level. Skip `info` rows. Do not editorialise: `[elevated] Login accounts with a
+shell: you, deploy` already carries its own weight.
 
 ## 2. Ask the six questions — in chat, not in a form
 

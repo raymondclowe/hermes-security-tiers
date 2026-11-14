@@ -28,7 +28,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -59,19 +58,7 @@ HEURISTIC = (
     ("throwaway", re.compile(r"(TEST|DEMO|SANDBOX|THROWAWAY|SCRATCH|MAILINATOR|DISPOSABLE)", re.I)),
 )
 
-PROBE_TIMEOUT = 4.0
-
-
 # --------------------------------------------------------------------------- utils
-
-
-def run(cmd: list[str], timeout: float = PROBE_TIMEOUT) -> str:
-    try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                              stdin=subprocess.DEVNULL)
-        return done.stdout if done.returncode == 0 else ""
-    except (OSError, subprocess.SubprocessError):
-        return ""
 
 
 def hermes_home() -> Path:
@@ -90,68 +77,97 @@ def first_existing(*paths: Path) -> Path | None:
 
 # -------------------------------------------------------------------------- probes
 
+LOOPBACK4 = {"0100007F"}
+LOOPBACK6 = {"00000000000000000000000001000000"}
+
+
+def listening_ports() -> list[str]:
+    """Ports accepting connections on something other than loopback, read from /proc."""
+    ports: set[str] = set()
+    for name in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            lines = Path(name).read_text(encoding="utf-8", errors="replace").splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            cols = line.split()
+            if len(cols) < 4 or cols[3] != "0A":       # 0A = LISTEN
+                continue
+            addr, _, port_hex = cols[1].partition(":")
+            if addr in LOOPBACK4 or addr in LOOPBACK6:
+                continue
+            try:
+                ports.add(str(int(port_hex, 16)))
+            except ValueError:
+                continue
+    return sorted(ports, key=int)
+
+
+def login_shells() -> list[str]:
+    try:
+        import pwd as accounts
+    except ImportError:                                # not a Unix host
+        return []
+    try:
+        return [e.pw_name for e in accounts.getpwall()
+                if e.pw_uid >= 1000 and not e.pw_shell.rstrip().endswith(("nologin", "false"))]
+    except Exception:
+        return []
+
+
+def disk_encrypted() -> bool:
+    for marker in Path("/sys/block").glob("*/dm/uuid"):
+        try:
+            if marker.read_text(encoding="utf-8").strip().startswith("CRYPT-LUKS"):
+                return True
+        except OSError:
+            continue
+    return False
+
 
 def probe(findings: list[dict]) -> None:
-    """Collect facts about the machine. Every probe degrades to a skip, never a crash."""
+    """Collect facts about the machine.
+
+    Pure stdlib reads: no shell, no child processes, no elevated calls. Every probe
+    degrades to a skip so an unusual host produces fewer findings, never a crash.
+    """
 
     def add(id_, label, value, risk, why):
         findings.append({"id": id_, "label": label, "value": value, "risk": risk, "why": why})
 
-    # virtualisation: a cloud box has a different threat model from a locked room
-    # systemd-detect-virt exits 1 on bare metal, so rc is not a failure signal here
+    # virtualisation: a VM's console belongs to whoever runs the hypervisor
+    virt = "unknown"
     try:
-        virt = subprocess.run(["systemd-detect-virt"], capture_output=True, text=True,
-                              timeout=PROBE_TIMEOUT).stdout.strip() or "unknown"
-    except (OSError, subprocess.SubprocessError):
-        virt = "unknown"
-    if virt == "unknown":
-        try:
-            dmi = Path("/sys/class/dmi/id/product_name").read_text(encoding="utf-8").strip()
-            virt = "none" if dmi and not re.search(r"(kvm|vmware|virtualbox|qemu|hyper-v)", dmi, re.I) else virt
-        except OSError:
-            pass
-    physical = virt in ("none", "")
-    add("virt", "Platform", "physical" if physical else virt,
-        "info", "a VM's console is reachable by whoever runs the hypervisor")
-
-    # who else can get a shell
-    shells = []
-    try:
-        for line in Path("/etc/passwd").read_text(encoding="utf-8", errors="replace").splitlines():
-            parts = line.split(":")
-            if len(parts) >= 7 and parts[2].isdigit() and int(parts[2]) >= 1000:
-                if not parts[6].rstrip().endswith(("nologin", "false")):
-                    shells.append(parts[0])
+        dmi = Path("/sys/class/dmi/id/product_name").read_text(encoding="utf-8").strip()
+        if dmi:
+            virtualised = re.search(r"(kvm|vmware|virtualbox|qemu|hyper-v|xen|amazon ec2|google compute)",
+                                    dmi, re.I)
+            virt = dmi if virtualised else "none"
     except OSError:
         pass
-    risk = "low" if len(shells) <= 1 else "elevated"
-    add("users", "Login accounts with a shell", ", ".join(shells) or "unknown", risk,
+    physical = virt in ("none", "")
+    add("virt", "Platform", "physical" if physical else virt, "info",
+        "a virtual machine is reachable by whoever runs the hypervisor")
+
+    # who else can get a shell
+    shells = login_shells()
+    add("users", "Login accounts with a shell", ", ".join(shells) or "unknown",
+        "low" if len(shells) <= 1 else "elevated",
         "a second login can read every file this account can read")
 
     # inbound exposure
-    ss = run(["ss", "-ltnH"])
-    ports = []
-    for line in ss.splitlines():
-        cols = line.split()
-        if len(cols) >= 4:
-            local = cols[3]
-            addr, _, port = local.rpartition(":")
-            if addr in ("127.0.0.1", "[::1]", "::1"):
-                continue
-            if addr in ("*", "0.0.0.0", "[::]", "::"):
-                ports.append(port)
-    exposed = sorted(set(ports))
-    add("listeners", "Ports listening beyond loopback", ", ".join(exposed) or "none",
-        "elevated" if exposed else "low",
-        "reachable by anything that can route here — the LAN, or the internet if the router forwards it")
+    ports = listening_ports()
+    add("listeners", "Ports listening beyond loopback", ", ".join(ports) or "none",
+        "elevated" if ports else "low",
+        "reachable by anything that can route here — the LAN, or the internet if the router "
+        "forwards it")
 
     # encryption at rest
-    types = set(run(["lsblk", "-o", "TYPE", "-n"]).split())
-    encrypted = "crypt" in types
-    add("disk", "Disk encryption at rest", "yes (LUKS)" if encrypted else "not detected",
-        "info", "physical access without encryption is total disclosure")
+    encrypted = disk_encrypted()
+    add("disk", "Disk encryption at rest", "yes (LUKS)" if encrypted else "not detected", "info",
+        "physical access without encryption is total disclosure")
 
-    # ssh key permissions — the one finding that is actually actionable
+    # ssh key permissions — the finding that is usually actionable
     loose, total = [], 0
     ssh_dir = Path.home() / ".ssh"
     if ssh_dir.is_dir():
@@ -174,10 +190,9 @@ def probe(findings: list[dict]) -> None:
         add("ssh_perms", "SSH keys readable by group/other", ", ".join(loose), "high",
             "any other login can copy the key; chmod 600 them")
 
-    # hermes env file permissions + how many credentials it holds
+    # credential file permissions + how many entries they hold
     env_files = [p for p in (hermes_home() / ".env",
-                             Path.home() / ".hermes" / ".env",
-                             hermes_home() / "profiles" / "default" / ".env") if p.is_file()]
+                             Path.home() / ".hermes" / ".env") if p.is_file()]
     for path in dict.fromkeys(env_files):
         try:
             mode = path.stat().st_mode & 0o777
@@ -186,12 +201,13 @@ def probe(findings: list[dict]) -> None:
                      if "=" in ln and not ln.lstrip().startswith("#")]
         except OSError:
             continue
-        risk = "elevated" if mode & 0o077 else "low"
-        add(f"env:{path}", "Credential file", f"{path} — {oct(mode)}, {len(names)} entries", risk,
-            "world/group-readable means every other login can read it; chmod 600")
+        add(f"env:{path}", "Credential file", f"{path} — {oct(mode)}, {len(names)} entries",
+            "elevated" if mode & 0o077 else "low",
+            "group/world-readable means every other login can read it; chmod 600")
 
     # harness posture
-    cfg_path = first_existing(hermes_home() / "config.yaml", Path.home() / ".hermes" / "config.yaml")
+    cfg_path = first_existing(hermes_home() / "config.yaml",
+                              Path.home() / ".hermes" / "config.yaml")
     posture = {}
     if cfg_path and yaml is not None:
         try:
@@ -211,18 +227,13 @@ def probe(findings: list[dict]) -> None:
             f"approvals={posture['approvals']}",
             "info", "redact_secrets=true masks every credential-shaped string in tool output")
 
-    # privilege
-    nopasswd = subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0 \
-        if shutil.which("sudo") else False
-    add("sudo", "Passwordless sudo", "yes" if nopasswd else "no",
-        "elevated" if nopasswd else "low",
-        "a compromised agent turn becomes root without a prompt")
     if os.geteuid() == 0:
         add("root", "Running as root", "yes", "high",
             "every tool call has full control of the box")
 
 
 def ambient(findings: list[dict]) -> str:
+    """Aggregate finding severities into one word the interview can start from."""
     weights = {"high": 4, "elevated": 2, "low": 0, "info": 0}
     score = sum(weights.get(f["risk"], 0) for f in findings)
     if any(f["risk"] == "high" for f in findings) or score >= 8:
