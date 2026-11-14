@@ -169,6 +169,9 @@ def probe(findings: list[dict]) -> None:
         "physical access without encryption is total disclosure")
 
     # ssh key permissions — the finding that is usually actionable
+    # (mode bits are a POSIX concept: NTFS reports 0o666 for every file, so the
+    #  readability check is skipped where it cannot mean anything)
+    posix = os.name == "posix"
     loose, total = [], 0
     ssh_dir = Path.home() / ".ssh"
     if ssh_dir.is_dir():
@@ -184,7 +187,7 @@ def probe(findings: list[dict]) -> None:
                 continue
             total += 1
             mode = key.stat().st_mode
-            if mode & 0o077:
+            if posix and mode & 0o077:
                 loose.append(f"{key.name} ({oct(mode & 0o777)})")
     add("ssh", "SSH private keys", f"{total} key(s)", "info", "")
     if loose:
@@ -202,9 +205,13 @@ def probe(findings: list[dict]) -> None:
                      if "=" in ln and not ln.lstrip().startswith("#")]
         except OSError:
             continue
-        add(f"env:{path}", "Credential file", f"{path} — {oct(mode)}, {len(names)} entries",
-            "elevated" if mode & 0o077 else "low",
-            "group/world-readable means every other login can read it; chmod 600")
+        if posix:
+            add(f"env:{path}", "Credential file", f"{path} — {oct(mode)}, {len(names)} entries",
+                "elevated" if mode & 0o077 else "low",
+                "group/world-readable means every other login can read it; chmod 600")
+        else:
+            add(f"env:{path}", "Credential file", f"{path} — {len(names)} entries",
+                "low", "file mode check skipped off a POSIX host; ACLs are the real control")
 
     # harness posture
     cfg_path = first_existing(hermes_home() / "config.yaml",
@@ -228,7 +235,8 @@ def probe(findings: list[dict]) -> None:
             f"approvals={posture['approvals']}",
             "info", "redact_secrets=true masks every credential-shaped string in tool output")
 
-    if os.geteuid() == 0:
+    geteuid = getattr(os, "geteuid", None)      # POSIX only — absent on Windows
+    if geteuid is not None and geteuid() == 0:
         add("root", "Running as root", "yes", "high",
             "every tool call has full control of the box")
 
