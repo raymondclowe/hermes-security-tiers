@@ -128,7 +128,13 @@ items:
     note: "key material"
 ```
 
-That file **is** the policy. Edit it by hand whenever you like; the plugin re-reads it at session start.
+Everything after `# baseline rules` is written on every machine — the credential shapes that
+appear anywhere — so a machine whose keys live in a vault rather than a `.env` still gets a
+usable ladder. Rows for names discovery actually found come first, and are skipped when a
+baseline glob already covers them.
+
+That file **is** the policy. Edit it by hand whenever you like; the plugin re-reads it at
+session start.
 
 ## What it does at runtime
 

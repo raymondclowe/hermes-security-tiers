@@ -24,6 +24,7 @@ Needs only python3 and PyYAML.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -387,6 +388,38 @@ def interview(answers: dict, interactive: bool) -> dict:
 
 # ------------------------------------------------------------------------- manifest
 
+# Always written, whatever discovery finds: the credential shapes that show up on every
+# machine. Discovery can only see names in .env and the environment, so a vault-only
+# setup would otherwise produce an almost empty manifest.
+BASELINE_RULES: tuple[tuple[str, list[str], str], ...] = (
+    ("throwaway",
+     ["*_TEST*", "*_DEMO*", "*sandbox*", "*throwaway*", "*mailinator*", "*LIBRARY*",
+      "*GUEST*WIFI*"],
+     "test, demo and one-off credentials — costing nothing is the point"),
+    ("low",
+     ["*OPENROUTER*", "*DEEPSEEK*", "*GROQ*", "*TOGETHER*", "*REPLICATE*", "*HF_TOKEN*",
+      "*HUGGINGFACE*", "*GEMINI*", "*MISTRAL*", "*XAI*"],
+     "prepaid inference and free tiers — loss capped by the balance"),
+    ("money",
+     ["*KRAKEN*", "*BINANCE*", "*COINBASE*", "*BITFINEX*", "*LEDN*", "*STRIPE*", "*PAYPAL*",
+      "*AWS_SECRET*", "*AWS_ACCESS*", "*LIGHTSAIL*", "*BILLING*", "*METAMASK*", "*WALLET*",
+      "*MNEMONIC*", "*SEED_PHRASE*"],
+     "moves or bills money"),
+    ("root",
+     ["id_rsa*", "id_ed25519*", "id_ecdsa*", "*PRIVATE*KEY*", "*.ssh/*", "*SSH*KEY*",
+      "*CLOUDFLARE*", "CF_API*", "*CF_TOKEN*", "*TELEGRAM*BOT*", "*GITHUB_TOKEN*",
+      "*GH_TOKEN*", "*GOOGLE_REFRESH*", "*EMAIL_PASSWORD*", "*IMAP*", "*SMTP*",
+      "*APP_PASS*", "*bank*", "*credit*card*"],
+     "fleet, identity and money movement — the keys to everything else"),
+)
+
+
+def covered_by_baseline(name: str) -> bool:
+    """True when a baseline glob already handles this name, so no per-machine row is needed."""
+    low = name.lower()
+    return any(fnmatch.fnmatchcase(low, pattern.lower())
+               for _tier, patterns, _note in BASELINE_RULES for pattern in patterns)
+
 
 def render_manifest(ans: dict, findings: list[dict], creds: list[dict]) -> str:
     rotate_from = _SETTINGS_FROM_ANSWER["rotate"].get(ans.get("rotate", ""), "money")
@@ -425,6 +458,8 @@ def render_manifest(ans: dict, findings: list[dict], creds: list[dict]) -> str:
     ]
     if creds:
         for cred in creds:
+            if covered_by_baseline(cred["name"]):
+                continue
             tier = ans.get("credentials", {}).get(cred["name"], cred["tier"])
             if tier not in RANK:
                 tier = default_tier
@@ -434,25 +469,18 @@ def render_manifest(ans: dict, findings: list[dict], creds: list[dict]) -> str:
                 f"    tier: {tier}",
                 f"    note: {json.dumps('found in ' + note)}",
             ]
-    else:
+
+    # Baseline rules: always present, so a machine whose credentials live in a vault
+    # rather than a .env file still gets a usable ladder instead of an empty file.
+    lines += ["", "# baseline rules — always written; edit or delete as you see fit"]
+    for tier, patterns, note in BASELINE_RULES:
+        joined = ", ".join(json.dumps(p) for p in patterns)
         lines += [
-            "  - match: [\"*_TEST*\", \"*_DEMO*\", \"*sandbox*\"]",
-            "    tier: throwaway",
-            '    note: "test and demo credentials"',
+            f"  - match: [{joined}]",
+            f"    tier: {tier}",
+            f"    note: {json.dumps(note)}",
         ]
 
-    # Structural rules: discovery only sees names in .env and the environment, so the
-    # shapes that matter for file paths and key material are always appended.
-    lines += [
-        "",
-        "# structural rules — always present, independent of what discovery found",
-        "  - match: [\"*_TEST*\", \"*_DEMO*\", \"*sandbox*\", \"*throwaway*\", \"*mailinator*\"]",
-        "    tier: throwaway",
-        '    note: "test, demo and one-off credentials"',
-        "  - match: [\"id_rsa*\", \"id_ed25519*\", \"id_ecdsa*\", \"*PRIVATE*KEY*\", \"*.ssh/*\", \"*SSH*KEY*\"]",
-        "    tier: root",
-        '    note: "key material — access to the fleet"',
-    ]
     lines += [
         "",
         "# --- environment this file was generated against (" + time.strftime("%Y-%m-%d") + ") ---",
