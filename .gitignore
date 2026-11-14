@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# A real manifest can match real credential names for one machine. Never commit it.
+security-tiers.yaml
+security-tiers.yaml.bak-*
+*.bak-[0-9]*
+answers.json

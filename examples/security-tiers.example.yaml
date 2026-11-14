@@ -1,0 +1,81 @@
+# A fully-commented example. Copy to $HERMES_HOME/security-tiers.yaml, or let
+# scripts/setup.py write one. Nothing here is machine-specific.
+#
+# The one question a tier answers: what does it cost if this leaks?
+# Not how secret the string looks. Not where the machine sits.
+
+version: 1
+
+settings:
+  # Tier for anything no row matches. low = "treat it normally, do not warn".
+  default_tier: low
+
+  # Lowest tier that may ever be advised to rotate, and only on real exposure.
+  # none = never advise rotation at all.
+  rotate_advice_from: money
+
+  # Lowest tier the agent must refuse to type into a page.
+  # none = type anything, root included.
+  type_passwords_from: money
+
+  # At most one caution per credential per conversation.
+  one_caution_per_item: true
+
+tiers:
+  # Replace the built-in wording if you want your own phrasing in every session.
+  throwaway:
+    rule: "Type it, paste it, echo it. Never warn. Never advise rotation."
+  low:
+    rule: "Use freely in files, commands and chat. No unsolicited rotate advice."
+  money:
+    rule: "Out of chat, out of world-readable files. Env or vault. Rotate only after a real exposure."
+  root:
+    rule: "Vault or env only. Never printed. Rotate only after a real exposure."
+
+items:
+  # --- throwaway: costs nothing -------------------------------------------------
+  - match: ["*LIBRARY*", "*HKPL*", "*GUEST*WIFI*", "*mailinator*", "*+test@*"]
+    tier: throwaway
+    note: "public or one-off; reset at a counter, or not worth resetting"
+  - match: ["*_TEST*", "*_DEMO*", "*sandbox*"]
+    tier: throwaway
+    note: "test credentials with no balance behind them"
+
+  # --- low: bounded loss --------------------------------------------------------
+  - match: ["*OPENROUTER*", "*DEEPSEEK*", "*GROQ*", "*TOGETHER*", "*REPLICATE*"]
+    tier: low
+    note: "prepaid inference — loss capped by the balance"
+  - match: ["*HF_TOKEN*", "*HUGGINGFACE*", "*GEMINI*"]
+    tier: low
+    note: "free tier"
+  - match: ["*SCHOOL*PORTAL*", "*library*"]
+    tier: low
+    note: "personal data, not money; resettable by email"
+
+  # --- money: it moves or bills money ------------------------------------------
+  - match: ["*KRAKEN*", "*BINANCE*", "*COINBASE*", "*BITFINEX*", "*LEDN*"]
+    tier: money
+    note: "exchange and lending API keys"
+  - match: ["*AWS_SECRET*", "*AWS_ACCESS*", "*LIGHTSAIL*", "*_AWS_*", "*BILLING*"]
+    tier: money
+    note: "cloud billing — spend, not identity"
+  - match: ["*METAMASK*", "*WALLET*", "*MNEMONIC*", "*SEED_PHRASE*"]
+    tier: money
+    note: "wallet material is money, whatever else it looks like"
+
+  # --- root: control of identity or infrastructure ------------------------------
+  - match: ["id_rsa*", "id_ed25519*", "id_ecdsa*", "*PRIVATE*KEY*", "*.ssh/*"]
+    tier: root
+    note: "access to every machine that trusts this key"
+  - match: ["*CLOUDFLARE*", "CF_API*", "*CF_TOKEN*"]
+    tier: root
+    note: "DNS and Workers for a whole domain"
+  - match: ["*TELEGRAM*BOT*", "*GITHUB_TOKEN*", "*GH_TOKEN*", "*GOOGLE_REFRESH*"]
+    tier: root
+    note: "messaging and identity control"
+  - match: ["*EMAIL_PASSWORD*", "*IMAP*", "*SMTP*", "*APP_PASS*"]
+    tier: root
+    note: "a mailbox resets everything else"
+  - match: ["*bank*", "*credit*card*", "*ATM*PIN*"]
+    tier: root
+    note: "banking"

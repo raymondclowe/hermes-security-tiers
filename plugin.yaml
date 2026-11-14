@@ -1,0 +1,10 @@
+name: security-tiers
+version: "1.0.0"
+description: "Tiered credential policy instead of one blanket rule. throwaway/low/money/root, decided by the operator, rendered into every new session; records new tiers as they are stated (security_tier tool, /tiers command)."
+author: "Raymond Lowe"
+license: "MIT"
+homepage: "https://github.com/raymondclowe/hermes-security-tiers"
+provides_tools:
+  - security_tier
+provides_commands:
+  - tiers

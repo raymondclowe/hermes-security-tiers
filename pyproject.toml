@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-security-tiers"
+version = "1.0.0"
+description = "Tiered credential policy for Hermes Agent — throwaway/low/money/root instead of one blanket rule"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Raymond Lowe" }]
+keywords = ["hermes", "hermes-agent", "security", "credentials", "plugin", "agent"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+dependencies = ["PyYAML>=5.4"]
+
+[project.urls]
+Homepage = "https://github.com/raymondclowe/hermes-security-tiers"
+Issues = "https://github.com/raymondclowe/hermes-security-tiers/issues"
+
+[tool.setuptools]
+py-modules = []
