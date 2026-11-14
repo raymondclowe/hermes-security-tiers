@@ -48,12 +48,12 @@ hermes plugins enable security-tiers
 Then run the setup once:
 
 ```bash
-python3 ~/.hermes/plugins/security-tiers/scripts/setup.py
+python3 "$HERMES_HOME/plugins/security-tiers/scripts/setup.py"
 ```
 
-It needs only `python3` and PyYAML.
+`HERMES_HOME` is `~/.hermes` for a default install and `~/.hermes/profiles/<name>` for a named profile — the same file the plugin reads at session start. It needs only `python3` and PyYAML.
 
-> If your install keeps plugins elsewhere, clone the repo anywhere and point `HERMES_HOME` at your profile when running the script.
+> Cloned it somewhere else instead? Run the script from that clone with `HERMES_HOME` set. The plugin and the setup script agree on the manifest location because both resolve it from `HERMES_HOME`, never from their own path.
 
 ## Setup: probe, then interview, then write
 
